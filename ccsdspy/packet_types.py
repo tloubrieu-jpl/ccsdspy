@@ -141,7 +141,7 @@ class FixedLength(_BasePacket):
 
         self._init(fields)
 
-    def load(self, file, include_primary_header=False):
+    def load(self, file, include_primary_header=False, reset_file_obj=False):
         """Decode a file-like object containing a sequence of these packets.
 
         Parameters
@@ -150,6 +150,10 @@ class FixedLength(_BasePacket):
            Path to file on the local file system, or file-like object
         include_primary_header : bool
            If True, provides the primary header in the output
+        reset_file_obj : bool
+           If True, leave the file object, when it is file buffer, where it was before load is called.
+           Otherwise, (default), leave the file stream pos after the read packets.
+           Does not apply when file is a file location.
 
         Returns
         -------
@@ -172,6 +176,7 @@ class FixedLength(_BasePacket):
             self._converters,
             "fixed_length",
             include_primary_header=True,
+            reset_file_obj=reset_file_obj
         )
 
         # inspect the primary header and issue warning if appropriate
@@ -259,7 +264,7 @@ class VariableLength(_BasePacket):
 
         self._init(fields)
 
-    def load(self, file, include_primary_header=False):
+    def load(self, file, include_primary_header=False, reset_file_obj=False):
         """Decode a file-like object containing a sequence of these packets.
 
         Parameters
@@ -268,6 +273,10 @@ class VariableLength(_BasePacket):
            Path to file on the local file system, or file-like object
         include_primary_header : bool
            If True, provides the primary header in the output
+        reset_file_obj : bool
+           If True, leave the file object, when it is file buffer, where it was before load is called.
+           Otherwise, (default), leave the file stream pos after the read packets.
+           Does not apply when file is a file location.
 
         Returns
         -------
@@ -288,7 +297,12 @@ class VariableLength(_BasePacket):
         # they didn't want the primary header fields, we parse for them and then
         # remove them after.
         packet_arrays = _load(
-            file, self._fields, self._converters, "variable_length", include_primary_header=True
+            file,
+            self._fields,
+            self._converters,
+            "variable_length",
+            include_primary_header=True,
+            reset_file_obj=reset_file_obj
         )
 
         # inspect the primary header and issue warning if appropriate
@@ -587,7 +601,7 @@ def _get_fields_csv_file(csv_file):
     return fields
 
 
-def _load(file, fields, converters, decoder_name, include_primary_header=False):
+def _load(file, fields, converters, decoder_name, include_primary_header=False, reset_file_obj=False):
     """Decode a file-like object containing a sequence of these packets.
 
     Parameters
@@ -603,6 +617,10 @@ def _load(file, fields, converters, decoder_name, include_primary_header=False):
        String identifying which decoder to use.
     include_primary_header: bool
        If True, provides the primary header in the output
+    reset_file_obj : bool
+           If True, leave the file object, when it is a file buffer, where it was before _load is called.
+           Otherwise, (default), leave the file stream pos after the read packets.
+           Does not apply when file is a file location.
 
     Returns
     -------
@@ -615,6 +633,7 @@ def _load(file, fields, converters, decoder_name, include_primary_header=False):
       the decoder_name is not one of the allowed values
     """
     if hasattr(file, "read"):
+        pos = file.tell()
         file_bytes = np.frombuffer(file.read(), "u1")
     else:
         file_bytes = np.fromfile(file, "u1")
@@ -636,6 +655,9 @@ def _load(file, fields, converters, decoder_name, include_primary_header=False):
 
     field_arrays = _unexpand_field_arrays(field_arrays, expand_history)
     field_arrays = _apply_converters(field_arrays, converters)
+
+    if hasattr(file, 'read') and file_returns_where_it_was:
+        file.seek(pos)
 
     return field_arrays
 

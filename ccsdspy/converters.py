@@ -6,6 +6,7 @@ linear/polynomial calibration curves, dictionary replacement, and time parsing.
 from datetime import datetime, timedelta
 
 import numpy as np
+import crccheck
 
 __all__ = [
     "EnumConverterMissingKey",
@@ -52,6 +53,56 @@ class Converter:
             converted form of the decoded packet field values
         """
         raise NotImplementedError("This method must be overridden by a subclass")
+
+
+class CalculatedChecksum(Converter):
+    """Calculate CRC on the body of a CCSDS packet (everything but the primary header and the CRC field)."""
+    CRC = crccheck.crc.Crc16CcittFalse
+    JUMBO_LIMIT_BYTES = 4089
+    JUMBO_CRC = crccheck.crc.Crc32Mpeg2
+
+    def __init__(self):
+        pass
+
+    def convert(self,
+                version_number_array,
+                packet_type_array,
+                secondary_flag_array,
+                apid_array,
+                sequence_flag_array,
+                sequence_count_array,
+                packet_length_array,
+                body_array):
+        """
+
+        CCSDS_VERSION_NUMBER 3 bits, 45
+        CCSDS_PACKET_TYPE 1 bits, 43
+        CCSDS_SECONDARY_FLAG 1 bits, 42
+        CCSDS_APID 11 bits, 41
+        CCSDS_SEQUENCE_FLAG 2  bits, 30
+        CCSDS_SEQUENCE_COUNT 14 bits, 16
+        CCSDS_PACKET_LENGTH 16 bits, 0
+
+        """
+        calculated_crcs = []
+        value_iterator = zip(
+            version_number_array,
+            packet_type_array,
+            secondary_flag_array,
+            apid_array,
+            sequence_flag_array,
+            sequence_count_array,
+            packet_length_array,
+            body_array
+        )
+        for version_number, packet_type, secondary_flag, apid, sequence_flag, sequence_count, packet_length, body in value_iterator:
+
+            full_header = version_number << 45 + packet_type << 43 + secondary_flag << 42 + apid << 41 + sequence_flag << 30 + sequence_count << 16 + packet_length
+
+            crc = self.JUMBO_CRC if bool(len(body) >= 8*self.JUMBO_LIMIT_BYTES) else self.CRC
+            calculated_crcs.append(crc.calc(body))
+
+        return calculated_crcs
 
 
 class PolyConverter(Converter):
